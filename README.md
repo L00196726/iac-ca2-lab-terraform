@@ -8,7 +8,30 @@ I am using it here as the Docker Image for the application to be deployed
 The image used is `docker push matheusmaximo/url-shortener:latest`
 
 ## The architecture
+Requests comes from Internet and goes to an Application Load Balancer.
+That ALB forwards traffic from and through the K8s Ingress and K8s Service (url-shortener-svc)
+The traffic is then forwarded to inside the EKS Cluster that contains two replicas running on different AZs.
+The ALB ensures the Nodes will receive traffic according to availability.
 
 ## How to deploy
+There are two steps.
+1. Deploy the eks to create the cluster:
+```
+cd terraform/eks
+terraform init
+terraform validate
+terraform apply
+```
+Make not of the Region and the Cluster Name
+```
+aws eks update-kubeconfig  --name <Cluster Name from the EKS>  --region <Region From the EKS>
+```
 
+2. Deploy the application:
+```
+cd terraform/app
+terraform init
+terraform validate
+terraform apply -var="aws_region=<Region From the EKS>" -var="eks_cluster_name=<Cluster Name from the EKS>" 
+```
 
