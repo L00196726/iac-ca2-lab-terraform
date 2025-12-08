@@ -46,4 +46,11 @@ terraform init
 terraform validate
 terraform apply -var="aws_region=<Region From the EKS>" -var="eks_cluster_name=<Cluster Name from the EKS>" 
 ```
+The output of this deployment will be the application URL:
+```
+Outputs:
+
+kubernetes_ingress_v1_app_ingress_hostname = "http://k8s-abcdef-123456.us-east-1.elb.amazonaws.com/"
+```
+Then you can call it according to [these requests](https://github.com/L00196726/url-shortner?tab=readme-ov-file#send-requests)
 
