@@ -1,4 +1,4 @@
-output "service_hostname_hint" {
-  description = "As we are using LoadBalancer type, use kubectl to get the external hostname"
-  value       = "Run: kubectl get svc -n ${kubernetes_namespace_v1.app_ns.metadata[0].name} ${kubernetes_service_v1.app_svc.metadata[0].name}"
+output "kubernetes_ingress_v1_app_ingress_hostname" {
+  description = "The ALB Ingress hostname to access the app"
+  value       = "http://${kubernetes_ingress_v1.app_ingress.status[0].load_balancer[0].ingress[0].hostname}/"
 }

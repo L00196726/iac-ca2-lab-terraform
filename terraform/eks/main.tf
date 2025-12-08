@@ -19,6 +19,11 @@ terraform {
   }
 }
 
+locals {
+  # This is controlled by AWS, so hard-coded here
+  namespace = "kube-system"
+}
+
 provider "aws" {
   region = var.aws_region
 }
@@ -28,6 +33,7 @@ provider "kubernetes" {
   config_path = "~/.kube/config"
 }
 
+# This is required for the ALB
 provider "helm" {
   kubernetes = {
     host        = module.eks.cluster_endpoint
@@ -54,11 +60,13 @@ module "vpc" {
   single_nat_gateway     = false
   one_nat_gateway_per_az = true
 
+  # Public subnets for the AWS Load Balancer Controller to function
   public_subnet_tags = {
     "kubernetes.io/role/elb"                    = 1
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
 
+  # Private subnets for PODs
   private_subnet_tags = {
     "kubernetes.io/role/internal-elb"           = 1
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
@@ -102,6 +110,7 @@ module "eks" {
     }
   }
 
+  # Pointing EKS to the above VPC and private subnets
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
@@ -114,14 +123,16 @@ module "eks" {
 
   # AWS will manage the worker nodes
   eks_managed_node_groups = {
-    example = {
+    eks_node = {
       # The instance type restricts the number of ENIs we can attach
-      # t3.small allows up to 3 ENIs and 4 IP addresses per ENI, which is enough for this lab
+      # t3.small allows up to 2 ENIs and 2 IP addresses per ENI, is not enough for the cluster
+      # t3.small allows up to 3 ENIs and 4 IP addresses per ENI, is enought for this lab
+      # t3.medium allows up to 3 ENIs and 6 IP addresses per ENI, not free tier
       instance_types = ["t3.small"]
-      ami_type       = "AL2023_x86_64_STANDARD"
-      desired_size   = 1
-      min_size       = 1
-      max_size       = 3
+      # Minimum and desired should be at least 2 for multi-AZ
+      desired_size   = 2
+      min_size       = 2
+      max_size       = 4
     }
   }
 
@@ -130,10 +141,11 @@ module "eks" {
   }
 }
 
+# Service account for the ALB
 resource "kubernetes_service_account_v1" "aws_lb_sa" {
   metadata {
     name      = "aws-alb-controller-sa"
-    namespace = "kube-system"
+    namespace = local.namespace
 
     annotations = {
       "eks.amazonaws.com/role-arn" = module.aws_lb_controller_pod_identity.iam_role_arn
@@ -156,7 +168,7 @@ module "aws_lb_controller_pod_identity" {
   associations = {
     this = {
       cluster_name    = module.eks.cluster_name
-      namespace       = "kube-system"
+      namespace       = local.namespace
       service_account = kubernetes_service_account_v1.aws_lb_sa.metadata[0].name
     }
   }
@@ -165,7 +177,10 @@ module "aws_lb_controller_pod_identity" {
 # AWS Load Balancer Controller.
 resource "helm_release" "aws_lb_controller" {
   name       = "${var.cluster_name}-aws-alb-controller"
-  namespace  = "kube-system"
+  namespace  = local.namespace
+
+  # AWS Load Balancer controller Helm chart for Kubernetes
+  # https://github.com/aws/eks-charts/tree/master/stable/aws-load-balancer-controller
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
 

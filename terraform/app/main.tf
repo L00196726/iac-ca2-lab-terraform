@@ -15,6 +15,7 @@ terraform {
   }
 }
 
+# Hard coded details for the application
 locals {
   app_name  = "url-shortener"
   namespace = "url-shortener-ns"
@@ -26,14 +27,17 @@ provider "aws" {
   region = var.aws_region
 }
 
+# This is to get access to the cluster. Requires ~/.kube/config
 data "aws_eks_cluster" "this" {
   name = var.eks_cluster_name
 }
 
+# This is to get access to the cluster. Requires ~/.kube/config
 data "aws_eks_cluster_auth" "this" {
   name = var.eks_cluster_name
 }
 
+# Once we get the access above, this will work to populate cluster details
 provider "kubernetes" {
   host                    = data.aws_eks_cluster.this.endpoint
   token                   = data.aws_eks_cluster_auth.this.token
@@ -41,6 +45,7 @@ provider "kubernetes" {
 }
 
 # Namespace for the application
+# This is different from the kube-system namespace used by AWS
 resource "kubernetes_namespace_v1" "app_ns" {
   metadata {
     name = local.namespace
@@ -58,6 +63,7 @@ resource "kubernetes_deployment_v1" "app" {
   }
 
   spec {
+    # Minimum 2 replicas to ensure AZ redundancy
     replicas = 2
 
     selector {
@@ -78,10 +84,15 @@ resource "kubernetes_deployment_v1" "app" {
           name  = local.app_name
           image = local.container_image
 
+          # 5000
           port {
             container_port = local.container_port
           }
 
+          # Environment variables for the container to know the base URL
+          # But as the base URL will be the ALB domain which is known just after deployment
+          # I hardcoded this here as http://0.0.0.0:5000
+          # This still needs a solution.
           env {
             name  = "BASE_URL"
             value = "http://0.0.0.0:${local.container_port}/"
@@ -97,6 +108,8 @@ resource "kubernetes_deployment_v1" "app" {
             period_seconds        = 10
           }
 
+          # readiness probe to ensure the app is ready to serve traffic but for this app it is the same as liveness
+          # as I have no underneath resources for the moment
           readiness_probe {
             http_get {
               path = "/health"
@@ -127,8 +140,11 @@ resource "kubernetes_service_v1" "app_svc" {
       app = local.app_name
     }
 
+    # As we use ALB Ingress, we do not need to expose the service as LoadBalancer
     type = "ClusterIP"
 
+    # Port 80 on service will map to port 5000 on the container
+    # This port will also map to the ALB listener port
     port {
       port        = 80
       target_port = local.container_port
@@ -137,15 +153,19 @@ resource "kubernetes_service_v1" "app_svc" {
   }
 }
 
+# Ingress to expose the app via ALB
 resource "kubernetes_ingress_v1" "app_ingress" {
   metadata {
     name      = "${local.app_name}-ingress"
     namespace = kubernetes_namespace_v1.app_ns.metadata[0].name
 
+    # These annotations are required for ALB Ingress controller to work
     annotations = {
       "kubernetes.io/ingress.class"                  = "alb"
+      # Ensure the ALB is internet-facing
       "alb.ingress.kubernetes.io/scheme"             = "internet-facing"
       "alb.ingress.kubernetes.io/target-type"        = "ip"
+      # The port the ALB will listen on
       "alb.ingress.kubernetes.io/listen-ports"       = "[{\"HTTP\": 80}]"
     }
   }
@@ -161,7 +181,8 @@ resource "kubernetes_ingress_v1" "app_ingress" {
             service {
               name = kubernetes_service_v1.app_svc.metadata[0].name
               port {
-                number = 80
+                # The port of the service we specified above
+                number = kubernetes_service_v1.app_svc.spec[0].port[0].port
               }
             }
           }
