@@ -22,10 +22,22 @@ terraform init
 terraform validate
 terraform apply
 ```
-Make not of the Region and the Cluster Name
+
+If while applying you see this error:
+```
+ tls: failed to verify certificate: x509: certificate signed by unknown authority (possibly because of "crypto/rsa: verification error" while trying to verify candidate authority certificate "kubernetes")
+│ 
+│   with kubernetes_service_account_v1.aws_lb_sa,
+│   on main.tf line 135, in resource "kubernetes_service_account_v1" "aws_lb_sa":
+│  135: resource "kubernetes_service_account_v1" "aws_lb_sa" {
+│ 
+╵
+```
+Make not of the Region and the Cluster Name and run this command:
 ```
 aws eks update-kubeconfig  --name <Cluster Name from the EKS>  --region <Region From the EKS>
 ```
+Then apply again.
 
 2. Deploy the application:
 ```

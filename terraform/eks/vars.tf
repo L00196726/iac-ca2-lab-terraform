@@ -9,10 +9,3 @@ variable "cluster_name" {
     type        = string
     default     = "url-shortener-eu-west-1-eks"
 }
-
-variable "aws_ami_amzn_linux_eu_west_1" {
-    description = "Amazon Linux 2 AMI ID for eu-west-1"
-    type = string
-    default = "ami-0acd9fd39de089f9b"
-  
-}
